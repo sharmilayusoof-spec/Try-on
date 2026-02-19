@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Try-On Result Display</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .test-section h2 {
+            color: #495057;
+            margin-bottom: 15px;
+        }
+
+        button {
+            background: #6366f1;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            margin: 10px 5px;
+            transition: background 0.3s ease;
+        }
+
+        button:hover {
+            background: #4f46e5;
+        }
+
+        button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        .log {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 15px;
+        }
+
+        .log-entry {
+            margin: 5px 0;
+            padding: 3px 0;
+        }
+
+        .log-entry.success { color: #4ec9b0; }
+        .log-entry.error { color: #f48771; }
+        .log-entry.warning { color: #dcdcaa; }
+        .log-entry.info { color: #9cdcfe; }
+
+        .status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .result-preview {
+            margin: 20px 0;
+            padding: 20px;
+            background: white;
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .result-preview img {
+            max-width: 100%;
+            max-height: 600px;
+            border-radius: 8px;
+        }
+
+        .file-input {
+            margin: 10px 0;
+        }
+
+        input[type="file"] {
+            padding: 10px;
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 400px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Test Try-On Result Display</h1>
+        <p style="color: #666; margin-bottom: 20px;">This page tests the try-on API and result display independently.</p>
+
+        <div class="test-section">
+            <h2>Step 1: Upload Images</h2>
+            <div class="file-input">
+                <label>User Image:</label><br>
+                <input type="file" id="userImageInput" accept="image/*">
+            </div>
+            <div class="file-input">
+                <label>Cloth Image:</label><br>
+                <input type="file" id="clothImageInput" accept="image/*">
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>Step 2: Test Try-On</h2>
+            <button onclick="testTryOn()" id="testBtn">🚀 Test Try-On API</button>
+            <button onclick="clearLog()">🗑️ Clear Log</button>
+            <div id="status"></div>
+            <div class="log" id="logOutput"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>Step 3: Result</h2>
+            <div id="resultInfo"></div>
+            <div class="result-preview" id="resultPreview" style="display: none;">
+                <img id="resultImage" alt="Try-on result">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const logs = [];
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            logs.push(`[${timestamp}] ${type.toUpperCase()}: ${message}`);
+            
+            const logDiv = document.getElementById('logOutput');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${timestamp}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('logOutput').innerHTML = '';
+            logs.length = 0;
+        }
+
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = `status ${type}`;
+            statusDiv.textContent = message;
+            statusDiv.style.display = 'block';
+        }
+
+        async function testTryOn() {
+            const userImageInput = document.getElementById('userImageInput');
+            const clothImageInput = document.getElementById('clothImageInput');
+            const testBtn = document.getElementById('testBtn');
+
+            // Validate inputs
+            if (!userImageInput.files[0]) {
+                showStatus('Please select a user image', 'error');
+                return;
+            }
+
+            if (!clothImageInput.files[0]) {
+                showStatus('Please select a cloth image', 'error');
+                return;
+            }
+
+            // Disable button
+            testBtn.disabled = true;
+            testBtn.textContent = '⏳ Processing...';
+
+            clearLog();
+            log('=== TRY-ON TEST STARTED ===', 'info');
+            log(`User image: ${userImageInput.files[0].name} (${(userImageInput.files[0].size / 1024).toFixed(2)} KB)`, 'info');
+            log(`Cloth image: ${clothImageInput.files[0].name} (${(clothImageInput.files[0].size / 1024).toFixed(2)} KB)`, 'info');
+
+            try {
+                // Create FormData
+                log('Creating FormData...', 'info');
+                const formData = new FormData();
+                formData.append('user_image', userImageInput.files[0]);
+                formData.append('cloth_image', clothImageInput.files[0]);
+                log('✓ FormData created', 'success');
+
+                // Send request
+                const apiUrl = 'http://localhost:8000/api/v1/tryon/process';
+                log(`Sending POST request to: ${apiUrl}`, 'info');
+                showStatus('Sending request to backend...', 'info');
+
+                const startTime = Date.now();
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    body: formData
+                });
+                const requestTime = ((Date.now() - startTime) / 1000).toFixed(2);
+
+                log(`✓ Response received in ${requestTime}s`, 'success');
+                log(`Status: ${response.status} ${response.statusText}`, response.ok ? 'success' : 'error');
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    log(`✗ Request failed: ${errorText}`, 'error');
+                    showStatus(`Request failed: ${response.status}`, 'error');
+                    return;
+                }
+
+                // Parse response
+                log('Parsing JSON response...', 'info');
+                const data = await response.json();
+                log('✓ JSON parsed successfully', 'success');
+
+                // Log response details
+                log('=== RESPONSE DATA ===', 'info');
+                log(`Status: ${data.status}`, 'info');
+                log(`File ID: ${data.file_id}`, 'info');
+                log(`Image URL: ${data.image_url || data.url || 'MISSING!'}`, data.image_url || data.url ? 'success' : 'error');
+                log(`Time taken: ${data.time_taken}s`, 'info');
+
+                if (data.metadata) {
+                    log(`Person size: ${data.metadata.person_size}`, 'info');
+                    log(`Cloth size: ${data.metadata.cloth_size}`, 'info');
+                    log(`Landmarks: ${data.metadata.landmarks_detected}`, 'info');
+                    log(`Confidence: ${data.metadata.pose_confidence}`, 'info');
+                }
+
+                // Check for image URL
+                const imageUrl = data.image_url || data.url;
+                if (!imageUrl) {
+                    log('✗ No image URL in response!', 'error');
+                    log('Available fields: ' + Object.keys(data).join(', '), 'warning');
+                    showStatus('Response missing image URL', 'error');
+                    
+                    // Show response
+                    document.getElementById('resultInfo').innerHTML = `
+                        <div class="status error">
+                            <strong>Error:</strong> No image URL in response<br>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Build full URL
+                const fullUrl = imageUrl.startsWith('http') ? imageUrl : `http://localhost:8000${imageUrl}`;
+                log(`Full image URL: ${fullUrl}`, 'info');
+
+                // Test image accessibility
+                log('Testing image accessibility...', 'info');
+                const imgTestResponse = await fetch(fullUrl, { method: 'HEAD' });
+                log(`Image HEAD request: ${imgTestResponse.status}`, imgTestResponse.ok ? 'success' : 'error');
+
+                if (!imgTestResponse.ok) {
+                    log('✗ Image is not accessible!', 'error');
+                    showStatus('Image file not accessible (404)', 'error');
+                    
+                    document.getElementById('resultInfo').innerHTML = `
+                        <div class="status error">
+                            <strong>Error:</strong> Image file not accessible<br>
+                            URL: ${fullUrl}<br>
+                            Status: ${imgTestResponse.status}
+                        </div>
+                    `;
+                    return;
+                }
+
+                log('✓ Image is accessible', 'success');
+
+                // Display image
+                log('Loading image...', 'info');
+                const resultImage = document.getElementById('resultImage');
+                const resultPreview = document.getElementById('resultPreview');
+
+                resultImage.onload = () => {
+                    log(`✓ Image loaded: ${resultImage.naturalWidth}x${resultImage.naturalHeight}`, 'success');
+                    log('=== TEST COMPLETED SUCCESSFULLY ===', 'success');
+                    showStatus('✓ Try-on completed successfully!', 'success');
+                    
+                    document.getElementById('resultInfo').innerHTML = `
+                        <div class="status success">
+                            <strong>Success!</strong><br>
+                            Image: ${resultImage.naturalWidth}x${resultImage.naturalHeight}px<br>
+                            Processing time: ${data.time_taken}s<br>
+                            URL: ${fullUrl}
+                        </div>
+                    `;
+                };
+
+                resultImage.onerror = () => {
+                    log('✗ Image failed to load', 'error');
+                    showStatus('Image failed to load', 'error');
+                };
+
+                resultImage.src = fullUrl;
+                resultPreview.style.display = 'block';
+
+            } catch (error) {
+                log(`✗ Error: ${error.message}`, 'error');
+                log(`Stack: ${error.stack}`, 'error');
+                showStatus(`Error: ${error.message}`, 'error');
+                
+                document.getElementById('resultInfo').innerHTML = `
+                    <div class="status error">
+                        <strong>Error:</strong> ${error.message}<br>
+                        <small>${error.stack}</small>
+                    </div>
+                `;
+            } finally {
+                testBtn.disabled = false;
+                testBtn.textContent = '🚀 Test Try-On API';
+            }
+        }
+    </script>
+</body>
+</html>
