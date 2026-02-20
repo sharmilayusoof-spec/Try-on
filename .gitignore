@@ -23,34 +23,49 @@ wheels/
 .installed.cfg
 *.egg
 
-# Environment
-.env
-.venv
+# Virtual Environment
+venv/
+ENV/
+env/
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
-# Storage
+# Environment variables
+.env
+
+# Storage and Results (don't upload user data)
 storage/uploads/*
 storage/processed/*
 storage/results/*
+results/*
+
+# Keep directory structure but ignore contents
 !storage/uploads/.gitkeep
 !storage/processed/.gitkeep
 !storage/results/.gitkeep
-
-# ML Models
-*.pth
-*.pt
-*.onnx
-*.pb
-
-# Logs
-*.log
-logs/
+!results/.gitkeep
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+
+# VITON (optional - large ML models)
+VITON/model/
+VITON/results/
+VITON/data/women_top/
+VITON/data/pose/
+VITON/data/segment/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
