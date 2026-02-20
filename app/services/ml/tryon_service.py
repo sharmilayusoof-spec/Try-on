@@ -142,16 +142,20 @@ class TryOnService:
         logger = logging.getLogger(__name__)
         logger.info(f"Body measurements: shoulder_width={shoulder_width}px, torso_height={torso_height}px")
         
-        # CRITICAL FIX: Start clothing BELOW the neck, never on face
-        # Calculate neck position (below nose, above shoulders)
-        neck_y = nose_y + int((shoulder_y - nose_y) * 0.7)  # 70% down from nose to shoulders
+        # CRITICAL FIX: Start clothing BELOW the neck, NEVER on face
+        # Calculate neck position (well below nose, at shoulder level)
+        neck_y = nose_y + int((shoulder_y - nose_y) * 0.85)  # 85% down from nose to shoulders (more conservative)
         
-        # Ensure clothing starts at least at neck level or below
-        clothing_start_y = max(neck_y, shoulder_y - 20)  # Start at neck or slightly above shoulders
+        # Ensure clothing starts AT SHOULDER LEVEL or below - NEVER above
+        clothing_start_y = max(neck_y, shoulder_y)  # Start at shoulders, not above
         
-        # NEVER allow clothing above 25% of image height (safety check)
-        absolute_min_y = int(h * 0.25)
+        # NEVER allow clothing above 30% of image height (stricter safety check)
+        absolute_min_y = int(h * 0.30)
         clothing_start_y = max(clothing_start_y, absolute_min_y)
+        
+        # Additional safety: ensure we're well below the nose
+        min_distance_from_nose = int(h * 0.15)  # At least 15% of image height below nose
+        clothing_start_y = max(clothing_start_y, nose_y + min_distance_from_nose)
         
         logger.info(f"Clothing placement: nose_y={nose_y}, neck_y={neck_y}, shoulder_y={shoulder_y}, start_y={clothing_start_y}")
         
@@ -359,8 +363,8 @@ class TryOnService:
         roi_float = roi.astype(np.float32)
         cloth_float = cloth.astype(np.float32)
         
-        # Blend with high opacity in center, fading at edges
-        alpha = 0.9  # High opacity for cloth
+        # Blend with very high opacity for better visibility
+        alpha = 0.95  # Very high opacity for cloth to be clearly visible
         blended_roi = (cloth_float * mask_3ch * alpha + roi_float * (1 - mask_3ch * alpha))
         
         result[y1:y2, x1:x2] = np.clip(blended_roi, 0, 255).astype(np.uint8)
