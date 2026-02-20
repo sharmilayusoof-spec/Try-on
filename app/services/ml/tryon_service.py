@@ -5,8 +5,9 @@ import cv2
 import numpy as np
 import time
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 from app.services.ml.pose_detection import PoseDetector
+from app.services.ml.size_recommendation import SizeRecommendationService
 from app.utils.image_processor import (
     load_image, save_image, resize_image, blend_images
 )
@@ -15,14 +16,15 @@ from app.core.exceptions import ImageProcessingError, PoseDetectionError
 
 
 class TryOnService:
-    """Virtual Try-On processing service"""
+    """Virtual Try-On processing service with size recommendation"""
     
     def __init__(self):
         """Initialize try-on service"""
         self.pose_detector = PoseDetector()
+        self.size_recommender = SizeRecommendationService()
     
-    def process(self, user_image_path: str, cloth_image_path: str, 
-                output_path: str) -> Dict:
+    def process(self, user_image_path: str, cloth_image_path: str,
+                output_path: str, clothing_type: Optional[str] = None) -> Dict:
         """
         Process virtual try-on
         
@@ -51,11 +53,21 @@ class TryOnService:
             logger = logging.getLogger(__name__)
             logger.info(f"Detected keypoints: shoulders at y={keypoints.get('left_shoulder', (0,0))[1]:.2f}, hips at y={keypoints.get('left_hip', (0,0))[1]:.2f}")
             
-            # Get body region
+            # Get body region with measurements
             body_region = self._get_body_region(user_img, keypoints)
             logger.info(f"Body region: y1={body_region['y1']}, y2={body_region['y2']}, height={body_region['height']}")
             
-            # Warp cloth to fit body
+            # Get size recommendation if clothing type provided
+            size_recommendation = None
+            if clothing_type:
+                size_recommendation = self.size_recommender.recommend_size(
+                    body_region['measurements'],
+                    clothing_type,
+                    user_img.shape[0]
+                )
+                logger.info(f"Size recommendation: {size_recommendation['recommended_size']}")
+            
+            # Warp cloth to fit body with improved perspective
             warped_cloth = self._warp_cloth(cloth_img, body_region, keypoints)
             
             # Blend cloth with user image
@@ -67,7 +79,7 @@ class TryOnService:
             # Calculate processing time
             time_taken = time.time() - start_time
             
-            return {
+            response = {
                 'success': True,
                 'output_path': output_path,
                 'time_taken': time_taken,
@@ -75,9 +87,16 @@ class TryOnService:
                     'person_size': f"{user_img.shape[1]}x{user_img.shape[0]}",
                     'cloth_size': f"{cloth_img.shape[1]}x{cloth_img.shape[0]}",
                     'landmarks_detected': len(landmarks),
-                    'pose_confidence': pose_result['confidence']
+                    'pose_confidence': pose_result['confidence'],
+                    'body_measurements': body_region['measurements']
                 }
             }
+            
+            # Add size recommendation if available
+            if size_recommendation:
+                response['size_recommendation'] = size_recommendation
+            
+            return response
             
         except (PoseDetectionError, ImageProcessingError) as e:
             raise
@@ -87,24 +106,26 @@ class TryOnService:
     def _get_body_region(self, image: np.ndarray,
                          keypoints: Dict[str, Tuple[float, float]]) -> Dict:
         """
-        Extract body region for cloth placement - FIXED to place on torso, not face
+        Extract TORSO region for cloth placement - ensures clothing appears on body, NOT face
         
         Args:
             image: User image
             keypoints: Body keypoints
             
         Returns:
-            Dictionary with region coordinates
+            Dictionary with region coordinates and body measurements
         """
         h, w = image.shape[:2]
         
-        # Get shoulder and hip points with fallbacks
-        left_shoulder = keypoints.get('left_shoulder', (0.25, 0.35))
-        right_shoulder = keypoints.get('right_shoulder', (0.75, 0.35))
-        left_hip = keypoints.get('left_hip', (0.3, 0.7))
-        right_hip = keypoints.get('right_hip', (0.7, 0.7))
+        # Get key body points with realistic fallbacks
+        nose = keypoints.get('nose', (0.5, 0.15))
+        left_shoulder = keypoints.get('left_shoulder', (0.35, 0.30))
+        right_shoulder = keypoints.get('right_shoulder', (0.65, 0.30))
+        left_hip = keypoints.get('left_hip', (0.40, 0.65))
+        right_hip = keypoints.get('right_hip', (0.60, 0.65))
         
         # Convert normalized coordinates to pixels
+        nose_y = int(nose[1] * h)
         shoulder_left_x = int(left_shoulder[0] * w)
         shoulder_right_x = int(right_shoulder[0] * w)
         shoulder_y = int(min(left_shoulder[1], right_shoulder[1]) * h)
@@ -113,31 +134,41 @@ class TryOnService:
         hip_right_x = int(right_hip[0] * w)
         hip_y = int(max(left_hip[1], right_hip[1]) * h)
         
-        # CRITICAL: Ensure y1 is NEVER above 35% of image height (below face)
-        # This prevents clothing from appearing on face
-        min_y1 = int(h * 0.35)  # Force start at least 35% down the image (INCREASED)
+        # Calculate body measurements for size recommendation
+        shoulder_width = abs(shoulder_right_x - shoulder_left_x)
+        torso_height = abs(hip_y - shoulder_y)
         
-        # Log for debugging
         import logging
         logger = logging.getLogger(__name__)
-        logger.warning(f"IMAGE HEIGHT: {h}, MIN_Y1 (35%): {min_y1}, SHOULDER_Y: {shoulder_y}")
+        logger.info(f"Body measurements: shoulder_width={shoulder_width}px, torso_height={torso_height}px")
         
-        # Calculate torso region - START FROM SHOULDERS, NOT FACE
-        x1 = int(min(shoulder_left_x, hip_left_x))
-        x2 = int(max(shoulder_right_x, hip_right_x))
+        # CRITICAL FIX: Start clothing BELOW the neck, never on face
+        # Calculate neck position (below nose, above shoulders)
+        neck_y = nose_y + int((shoulder_y - nose_y) * 0.7)  # 70% down from nose to shoulders
         
-        # Start from shoulders, but NEVER higher than 25% of image
-        y1 = max(min_y1, shoulder_y - 40)  # Start higher for neckline coverage
-        y2 = hip_y + 120  # Extend further below hips for full torso coverage
+        # Ensure clothing starts at least at neck level or below
+        clothing_start_y = max(neck_y, shoulder_y - 20)  # Start at neck or slightly above shoulders
         
-        # Add MORE horizontal padding for better coverage
-        horizontal_padding = int((x2 - x1) * 0.3)  # Increased from 0.2 to 0.3
+        # NEVER allow clothing above 25% of image height (safety check)
+        absolute_min_y = int(h * 0.25)
+        clothing_start_y = max(clothing_start_y, absolute_min_y)
+        
+        logger.info(f"Clothing placement: nose_y={nose_y}, neck_y={neck_y}, shoulder_y={shoulder_y}, start_y={clothing_start_y}")
+        
+        # Calculate torso region boundaries
+        x1 = min(shoulder_left_x, hip_left_x)
+        x2 = max(shoulder_right_x, hip_right_x)
+        y1 = clothing_start_y
+        y2 = hip_y + int(torso_height * 0.4)  # Extend below hips for full coverage
+        
+        # Add horizontal padding for natural fit
+        horizontal_padding = int(shoulder_width * 0.25)
         x1 = max(0, x1 - horizontal_padding)
         x2 = min(w, x2 + horizontal_padding)
         
-        # Ensure reasonable size
-        min_width = int(w * 0.25)
-        min_height = int(h * 0.35)
+        # Ensure minimum dimensions
+        min_width = int(w * 0.30)
+        min_height = int(h * 0.40)
         
         if (x2 - x1) < min_width:
             center_x = (x1 + x2) // 2
@@ -145,9 +176,12 @@ class TryOnService:
             x2 = min(w, center_x + min_width // 2)
         
         if (y2 - y1) < min_height:
-            center_y = (y1 + y2) // 2
-            y1 = max(0, center_y - min_height // 2)
-            y2 = min(h, center_y + min_height // 2)
+            # Expand downward only, never upward
+            y2 = min(h, y1 + min_height)
+        
+        # Ensure we don't exceed image boundaries
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(w, x2), min(h, y2)
         
         return {
             'x1': x1, 'y1': y1,
@@ -155,10 +189,18 @@ class TryOnService:
             'width': x2 - x1,
             'height': y2 - y1,
             'keypoints': {
+                'nose': (int(nose[0] * w), nose_y),
+                'neck': (int((left_shoulder[0] + right_shoulder[0]) / 2 * w), neck_y),
                 'left_shoulder': (shoulder_left_x, shoulder_y),
                 'right_shoulder': (shoulder_right_x, shoulder_y),
                 'left_hip': (hip_left_x, hip_y),
                 'right_hip': (hip_right_x, hip_y)
+            },
+            'measurements': {
+                'shoulder_width_px': shoulder_width,
+                'torso_height_px': torso_height,
+                'chest_width_px': int(shoulder_width * 1.1),  # Estimate
+                'waist_width_px': abs(hip_right_x - hip_left_x)
             }
         }
     

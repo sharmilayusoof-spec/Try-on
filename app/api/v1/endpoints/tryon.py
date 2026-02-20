@@ -26,13 +26,15 @@ api_service = APITryOnService(provider="mock")  # Using mock for now (free)
 async def process_tryon(
     user_image: UploadFile = File(..., description="User photo"),
     cloth_image: UploadFile = File(..., description="Clothing image"),
-    use_api: str = Form(default="false")
+    use_api: str = Form(default="false"),
+    clothing_type: str = Form(default="", description="Type of clothing (dress, shirt, top, etc.)")
 ):
     """
-    Process virtual try-on
+    Process virtual try-on with size recommendation
     
     Upload user photo and clothing image to generate try-on result.
     Set use_api=true for better quality (may have costs with commercial APIs)
+    Provide clothing_type for size recommendations (dress, shirt, top, tshirt, blouse, jacket, blazer)
     """
     import time
     start_time = time.time()
@@ -58,6 +60,7 @@ async def process_tryon(
         
         # Choose algorithm
         algorithm_used = "basic"
+        size_recommendation = None  # Initialize
         
         # Convert string to boolean
         use_api_bool = use_api.lower() in ('true', '1', 'yes')
@@ -90,19 +93,40 @@ async def process_tryon(
             except Exception as e:
                 logger.warning(f"API service failed, falling back to basic: {e}")
                 # Fallback to basic
-                result = tryon_service.process(user_path, cloth_path, str(output_path))
+                clothing_type_clean = clothing_type.strip() if clothing_type else None
+                result = tryon_service.process(
+                    user_path,
+                    cloth_path,
+                    str(output_path),
+                    clothing_type=clothing_type_clean
+                )
                 metadata = result['metadata']
+                size_recommendation = result.get('size_recommendation')
                 algorithm_used = "basic_fallback"
         else:
-            # Use basic algorithm
-            result = tryon_service.process(user_path, cloth_path, str(output_path))
+            # Use basic algorithm with size recommendation
+            clothing_type_clean = clothing_type.strip() if clothing_type else None
+            result = tryon_service.process(
+                user_path,
+                cloth_path,
+                str(output_path),
+                clothing_type=clothing_type_clean
+            )
             metadata = result['metadata']
+            
+            # Extract size recommendation if available
+            size_recommendation = result.get('size_recommendation')
         
         # Calculate time
         time_taken = time.time() - start_time
         
         # Add algorithm info to metadata
         metadata['algorithm'] = algorithm_used
+        
+        # Add size recommendation to metadata if available
+        if size_recommendation:
+            metadata['size_recommendation'] = size_recommendation
+            logger.info(f"Size recommendation: {size_recommendation['recommended_size']}")
         
         # Return response
         return TryOnResponse(

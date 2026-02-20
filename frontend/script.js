@@ -9,6 +9,8 @@ let selectedSize = null;
 let clothData = [];
 let currentViewMode = 'compare';
 let cameraStream = null;
+let livePreviewEnabled = false;
+let aiFitEnabled = true;
 
 // DOM Elements
 const uploadArea = document.getElementById('uploadArea');
@@ -45,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeClothSelection();
     initializeViewModes();
     initializeActions();
+    initializeAIFeatures();
     loadClothData();
 });
 
@@ -261,7 +264,7 @@ function selectCloth(cloth, element) {
     // Store cloth with full image path
     const clothWithFullPath = {
         ...cloth,
-        image: `/assets/clothes/${cloth.image}`
+        image: cloth.image.startsWith('data:') ? cloth.image : `/assets/clothes/${cloth.image}`
     };
     
     // Show size modal if sizes available
@@ -272,6 +275,11 @@ function selectCloth(cloth, element) {
         selectedSize = null;
         checkReadyState();
         showToast(`Selected: ${cloth.name}`, 'info');
+        
+        // Generate live preview if enabled
+        if (livePreviewEnabled && userImage) {
+            generateLivePreview();
+        }
     }
 }
 
@@ -347,6 +355,11 @@ async function processTryOn() {
         // Add use_api as form field
         formData.append('use_api', useAPI.toString());
         
+        // Add clothing type for size recommendation
+        if (selectedCloth.category) {
+            formData.append('clothing_type', selectedCloth.category);
+        }
+        
         // Call API
         const response = await fetch(API_ENDPOINT, {
             method: 'POST',
@@ -359,8 +372,14 @@ async function processTryOn() {
         
         const result = await response.json();
         
-        // Display result
+        // Display result with size recommendation
         displayResult(result);
+        
+        // Show size recommendation if available
+        if (result.metadata && result.metadata.size_recommendation) {
+            displaySizeRecommendation(result.metadata.size_recommendation);
+        }
+        
         showToast('Try-on complete!', 'success');
         
     } catch (error) {
@@ -647,4 +666,172 @@ function selectSize(size, cloth) {
         `;
         sizeChart.appendChild(row);
     });
+}
+
+// Display size recommendation from try-on result
+function displaySizeRecommendation(sizeRec) {
+    // Create or get size recommendation panel
+    let sizePanel = document.getElementById('sizeRecommendationPanel');
+    
+    if (!sizePanel) {
+        sizePanel = document.createElement('div');
+        sizePanel.id = 'sizeRecommendationPanel';
+        sizePanel.className = 'size-recommendation-panel';
+        resultSection.insertBefore(sizePanel, resultSection.firstChild);
+    }
+    
+    const fitScore = (sizeRec.fit_score * 100).toFixed(0);
+    const fitClass = fitScore >= 80 ? 'excellent' : fitScore >= 60 ? 'good' : 'fair';
+    
+    let fitAnalysisHTML = '';
+    if (sizeRec.fit_analysis) {
+        fitAnalysisHTML = '<div class="fit-details">';
+        for (const [part, analysis] of Object.entries(sizeRec.fit_analysis)) {
+            const fitIcon = analysis.fit === 'comfortable' || analysis.fit === 'fitted' ? '✓' :
+                           analysis.fit === 'loose' ? '↔' : '⚠';
+            fitAnalysisHTML += `
+                <div class="fit-item">
+                    <span class="fit-icon">${fitIcon}</span>
+                    <span class="fit-part">${part.charAt(0).toUpperCase() + part.slice(1)}:</span>
+                    <span class="fit-value">${analysis.fit}</span>
+                    <span class="fit-diff">(${analysis.difference_inches > 0 ? '+' : ''}${analysis.difference_inches}")</span>
+                </div>
+            `;
+        }
+        fitAnalysisHTML += '</div>';
+    }
+    
+    let alternativesHTML = '';
+    if (sizeRec.alternative_sizes && sizeRec.alternative_sizes.length > 0) {
+        alternativesHTML = `
+            <div class="alternative-sizes">
+                <strong>Also consider:</strong> ${sizeRec.alternative_sizes.join(', ')}
+            </div>
+        `;
+    }
+    
+    sizePanel.innerHTML = `
+        <div class="size-rec-header">
+            <h3>📏 Size Recommendation</h3>
+            <div class="fit-score ${fitClass}">
+                <span class="score-value">${fitScore}%</span>
+                <span class="score-label">Match</span>
+            </div>
+        </div>
+        <div class="recommended-size">
+            <span class="size-label">Recommended Size:</span>
+            <span class="size-value">${sizeRec.recommended_size}</span>
+        </div>
+        ${fitAnalysisHTML}
+        ${alternativesHTML}
+        <div class="size-note">
+            <small>💡 Based on your body measurements and standard size charts</small>
+        </div>
+    `;
+    
+    sizePanel.style.display = 'block';
+}
+
+// AI Features Initialization
+function initializeAIFeatures() {
+    const livePreviewToggle = document.getElementById('livePreviewToggle');
+    const aiFitToggle = document.getElementById('aiFitToggle');
+    const livePreviewSection = document.getElementById('livePreviewSection');
+    
+    // Live Preview Toggle
+    if (livePreviewToggle) {
+        livePreviewToggle.addEventListener('change', (e) => {
+            livePreviewEnabled = e.target.checked;
+            
+            if (livePreviewEnabled) {
+                showToast('Live Preview enabled! Select clothing to see instant preview', 'success');
+                if (userImage && selectedCloth) {
+                    generateLivePreview();
+                }
+            } else {
+                livePreviewSection.style.display = 'none';
+                showToast('Live Preview disabled', 'info');
+            }
+        });
+    }
+    
+    // AI Fit Toggle
+    if (aiFitToggle) {
+        aiFitToggle.addEventListener('change', (e) => {
+            aiFitEnabled = e.target.checked;
+            
+            if (aiFitEnabled) {
+                showToast('AI Fit Analysis enabled - You\'ll get size recommendations', 'success');
+            } else {
+                showToast('AI Fit Analysis disabled', 'info');
+            }
+        });
+    }
+}
+
+// Generate Live Preview
+async function generateLivePreview() {
+    if (!userImage || !selectedCloth || !livePreviewEnabled) return;
+    
+    const livePreviewSection = document.getElementById('livePreviewSection');
+    const livePreviewCanvas = document.getElementById('livePreviewCanvas');
+    
+    try {
+        // Show preview section
+        livePreviewSection.style.display = 'block';
+        livePreviewSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        
+        // Create a simple overlay preview (fast, client-side)
+        const ctx = livePreviewCanvas.getContext('2d');
+        
+        // Load user image
+        const userImg = new Image();
+        userImg.onload = async () => {
+            // Set canvas size
+            livePreviewCanvas.width = userImg.width;
+            livePreviewCanvas.height = userImg.height;
+            
+            // Draw user image
+            ctx.drawImage(userImg, 0, 0);
+            
+            // Load and overlay cloth image with transparency
+            const clothImg = new Image();
+            clothImg.crossOrigin = 'anonymous';
+            
+            clothImg.onload = () => {
+                // Calculate position (center on torso area - roughly 30-70% of height)
+                const torsoStartY = userImg.height * 0.30;
+                const torsoHeight = userImg.height * 0.40;
+                const torsoWidth = userImg.width * 0.50;
+                const torsoX = (userImg.width - torsoWidth) / 2;
+                
+                // Draw cloth with transparency
+                ctx.globalAlpha = 0.7;
+                ctx.drawImage(clothImg, torsoX, torsoStartY, torsoWidth, torsoHeight);
+                ctx.globalAlpha = 1.0;
+                
+                // Add preview watermark
+                ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
+                ctx.font = 'bold 20px Arial';
+                ctx.fillText('PREVIEW', 20, 40);
+            };
+            
+            clothImg.onerror = () => {
+                showToast('Failed to load clothing image for preview', 'error');
+            };
+            
+            // Handle both data URLs and regular URLs
+            if (selectedCloth.image.startsWith('data:')) {
+                clothImg.src = selectedCloth.image;
+            } else {
+                clothImg.src = selectedCloth.image;
+            }
+        };
+        
+        userImg.src = userImageEl.src;
+        
+    } catch (error) {
+        console.error('Live preview error:', error);
+        showToast('Live preview failed', 'error');
+    }
 }

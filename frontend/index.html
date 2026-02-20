@@ -125,20 +125,59 @@
 
             <!-- Try-On Button -->
             <section class="action-section">
-                <!-- API Quality Toggle -->
-                <div class="quality-toggle" style="margin-bottom: 1.5rem; text-align: center;">
-                    <label style="display: inline-flex; align-items: center; gap: 0.5rem; font-size: 1rem; color: white; cursor: pointer;">
-                        <input type="checkbox" id="useAPIToggle" style="width: 20px; height: 20px; cursor: pointer;">
-                        <span>Use Enhanced Quality (Recommended)</span>
-                    </label>
-                    <p style="color: #b0b0b0; font-size: 0.9rem; margin-top: 0.5rem;">
-                        Enhanced mode uses improved algorithm for better results
-                    </p>
+                <!-- AI FIT Features -->
+                <div class="ai-features-panel">
+                    <div class="feature-toggle">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="livePreviewToggle" class="toggle-input">
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-text">
+                                <strong>🎥 LIVE PREVIEW</strong>
+                                <small>See instant preview as you select clothes</small>
+                            </span>
+                        </label>
+                    </div>
+                    
+                    <div class="feature-toggle">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="aiFitToggle" class="toggle-input" checked>
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-text">
+                                <strong>🤖 AI FIT ANALYSIS</strong>
+                                <small>Get intelligent size recommendations</small>
+                            </span>
+                        </label>
+                    </div>
+                    
+                    <div class="feature-toggle">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="useAPIToggle" class="toggle-input">
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-text">
+                                <strong>⚡ ENHANCED QUALITY</strong>
+                                <small>Use advanced AI algorithm for best results</small>
+                            </span>
+                        </label>
+                    </div>
                 </div>
                 
                 <button class="btn btn-primary btn-large" id="tryOnBtn" disabled>
                     ✨ Try On Now
                 </button>
+            </section>
+
+            <!-- Live Preview Panel -->
+            <section class="live-preview-section" id="livePreviewSection" style="display: none;">
+                <h2>🎥 Live Preview</h2>
+                <div class="live-preview-container">
+                    <canvas id="livePreviewCanvas"></canvas>
+                    <div class="preview-overlay">
+                        <div class="preview-badge">LIVE PREVIEW</div>
+                    </div>
+                </div>
+                <p class="preview-note">
+                    💡 This is a quick preview. Click "Try On Now" for full quality result with AI fit analysis.
+                </p>
             </section>
 
             <!-- Result Section -->
